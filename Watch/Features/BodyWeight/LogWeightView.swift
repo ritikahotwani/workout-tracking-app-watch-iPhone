@@ -6,6 +6,7 @@ import WorkoutCore
 struct LogWeightView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(WatchSync.self) private var sync
     @AppStorage("weightUnit") private var unit: WeightUnit = .kg
     @Query(filter: #Predicate<BodyWeightEntry> { $0.deletedAt == nil }, sort: \BodyWeightEntry.date, order: .reverse)
     private var entries: [BodyWeightEntry]
@@ -59,6 +60,7 @@ struct LogWeightView: View {
         AccessibilityNotification.Announcement("Weight saved").post()
         Task {
             do { try await BodyMassSync.shared.save(entry) } catch { print("Health write failed: \(error)") }
+            sync.flush()  // after the Health write, so the phone gets the sample ID to dedupe on
         }
         dismiss()
     }

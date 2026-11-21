@@ -28,6 +28,8 @@ final class LiveSession {
     let context: ModelContext
     let workout: WorkoutSession
     let manager = WorkoutManager()
+    /// Phone history the watch merges into last time and PR baselines (empty on iPhone).
+    private let snapshots: [UUID: ExerciseSnapshot]
     private(set) var items: [Item] = []
     private(set) var index = 0
 
@@ -52,8 +54,9 @@ final class LiveSession {
     var current: Item? { items.indices.contains(index) ? items[index] : nil }
     var isCardioRunning: Bool { cardio != nil }
 
-    init(routine: Routine?, context: ModelContext) {
+    init(routine: Routine?, context: ModelContext, snapshots: [UUID: ExerciseSnapshot] = [:]) {
         self.context = context
+        self.snapshots = snapshots
         workout = WorkoutSession(routineID: routine?.id, source: Self.source)
         context.insert(workout)
         if let routine {
@@ -105,7 +108,10 @@ final class LiveSession {
         let last = (try? Queries.lastPerformance(exerciseID: exercise.id, excludingSession: workout.id, in: context)) ?? []
         let baseline = (try? Queries.prBaseline(exerciseID: exercise.id, excludingSession: workout.id, in: context))
             ?? PRBaseline()
-        items.append(Item(entry: entry, exercise: exercise, target: target, last: last, baseline: baseline))
+        let snapshot = snapshots[exercise.id]
+        items.append(Item(entry: entry, exercise: exercise, target: target,
+                          last: snapshot?.lastPerformance(local: last) ?? last,
+                          baseline: snapshot.map { baseline.merged(with: $0.baseline) } ?? baseline))
     }
 
     /// Last session's set at the same index, else its last set, else today's previous set, else target reps.

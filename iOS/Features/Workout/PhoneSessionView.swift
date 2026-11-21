@@ -5,6 +5,7 @@ import WorkoutCore
 struct PhoneSessionView: View {
     @Bindable var live: LiveSession
     let onEnd: () -> Void
+    @Environment(BackupController.self) private var backup
     @AppStorage("weightUnit") private var weightUnit: WeightUnit = .kg
     @AppStorage("distanceUnit") private var distanceUnit: DistanceUnit = .km
     @State private var confirmEnd = false
@@ -47,6 +48,7 @@ struct PhoneSessionView: View {
                     ending = true
                     Task {
                         await live.end()
+                        backup.syncSoon()
                         onEnd()
                     }
                 }
