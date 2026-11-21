@@ -1,0 +1,80 @@
+name: WorkoutTracker
+options:
+  bundleIdPrefix: com.ritikahotwani
+  deploymentTarget:
+    iOS: "26.0"
+    watchOS: "26.0"
+configFiles:
+  Debug: Config/Shared.xcconfig
+  Release: Config/Shared.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  WorkoutCore:
+    path: Packages/WorkoutCore
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.0.0
+targets:
+  WorkoutTracker:
+    type: application
+    platform: iOS
+    sources: [iOS]
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ritikahotwani.workouttracker
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Workout
+        UILaunchScreen: {}
+        NSHealthShareUsageDescription: Reads your workouts, heart rate and body weight to show your training history.
+        NSHealthUpdateUsageDescription: Saves your workouts and body weight to Apple Health.
+        SUPABASE_URL: $(SUPABASE_URL)
+        SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
+    entitlements:
+      path: iOS/WorkoutTracker.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+        com.apple.developer.applesignin: [Default]
+    dependencies:
+      - target: WorkoutTrackerWatch
+      - package: WorkoutCore
+      - package: Supabase
+        product: Supabase
+
+  WorkoutTrackerWatch:
+    type: application
+    platform: watchOS
+    sources: [Watch]
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ritikahotwani.workouttracker.watchkitapp
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: Workout
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: com.ritikahotwani.workouttracker
+        WKBackgroundModes: [workout-processing]
+        NSHealthShareUsageDescription: Reads heart rate and energy during workouts and your body weight.
+        NSHealthUpdateUsageDescription: Saves your workouts and body weight to Apple Health.
+        NSLocationWhenInUseUsageDescription: Tracks distance, pace and route during outdoor cardio.
+    entitlements:
+      path: Watch/WorkoutTrackerWatch.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+    dependencies:
+      - package: WorkoutCore

@@ -1,0 +1,3 @@
+// Shared build settings for all app targets.
+// Secrets.xcconfig is git-ignored; copy Secrets.example.xcconfig to create it.
+#include? "Secrets.xcconfig"
