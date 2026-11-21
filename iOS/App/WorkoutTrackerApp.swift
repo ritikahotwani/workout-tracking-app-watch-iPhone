@@ -8,6 +8,7 @@ struct WorkoutTrackerApp: App {
 
     init() {
         do { container = try makeModelContainer() } catch { fatalError("ModelContainer: \(error)") }
+        do { try ExerciseLibrary.seedIfNeeded(container.mainContext) } catch { print("Exercise seeding failed: \(error)") }
     }
 
     var body: some Scene {
@@ -25,7 +26,7 @@ struct RootView: View {
             Tab("Workout", systemImage: "figure.strengthtraining.traditional") { Placeholder(title: "Workout") }
             Tab("Progress", systemImage: "chart.line.uptrend.xyaxis") { Placeholder(title: "Progress") }
             Tab("Body", systemImage: "scalemass") { Placeholder(title: "Body") }
-            Tab("Library", systemImage: "books.vertical") { Placeholder(title: "Library") }
+            Tab("Library", systemImage: "books.vertical") { LibraryView() }
             Tab("Settings", systemImage: "gearshape") { Placeholder(title: "Settings") }
         }
     }
@@ -43,5 +44,5 @@ private struct Placeholder: View {
 }
 
 #Preview {
-    RootView().preferredColorScheme(.dark)
+    RootView().preferredColorScheme(.dark).modelContainer(try! makeModelContainer(inMemory: true))
 }
