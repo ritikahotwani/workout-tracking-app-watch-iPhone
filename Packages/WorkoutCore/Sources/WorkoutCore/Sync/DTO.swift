@@ -197,15 +197,15 @@ public struct WorkoutSessionDTO: SyncDTO {
     public var createdAt: Date
     public var updatedAt: Date
     @NullEncodable public var deletedAt: Date?
-    public var routineID: UUID?
+    @NullEncodable public var routineID: UUID?
     public var startedAt: Date
     @NullEncodable public var endedAt: Date?
     public var pausedSeconds: Double
     public var source: String
     @NullEncodable public var activeCalories: Double?
-    public var avgHeartRate: Double?
+    @NullEncodable public var avgHeartRate: Double?
     @NullEncodable public var healthKitWorkoutID: UUID?
-    public var importKey: String?
+    @NullEncodable public var importKey: String?
 
     enum CodingKeys: String, CodingKey {
         case id, source
@@ -287,9 +287,9 @@ public struct SetEntryDTO: SyncDTO {
     public var sessionExerciseID: UUID
     public var sortOrder: Int
     @NullEncodable public var weightKg: Double?
-    public var reps: Int?
+    @NullEncodable public var reps: Int?
     @NullEncodable public var distanceMeters: Double?
-    public var durationSeconds: Double?
+    @NullEncodable public var durationSeconds: Double?
     @NullEncodable public var restSeconds: Double?
     public var completedAt: Date
     @NullEncodable public var importKey: String?

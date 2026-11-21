@@ -49,11 +49,13 @@ public enum ExerciseLibrary {
     public static func seedIfNeeded(_ context: ModelContext) throws {
         let existing = Set(try context.fetch(FetchDescriptor<Exercise>()).map(\.id))
         var inserted = false
+        // Epoch timestamps: any user edit or server copy always wins LWW over a fresh seed.
         for b in builtIns {
             let id = Exercise.builtInID(for: b.name)
             guard !existing.contains(id) else { continue }
             context.insert(Exercise(id: id, name: b.name, muscleGroup: b.muscleGroup, kind: b.kind,
-                                    cardioActivity: b.cardioActivity, isBuiltIn: true, needsPush: false))
+                                    cardioActivity: b.cardioActivity, isBuiltIn: true,
+                                    createdAt: .init(timeIntervalSince1970: 0), updatedAt: .init(timeIntervalSince1970: 0), needsPush: false))
             inserted = true
         }
         if inserted { try context.save() }
