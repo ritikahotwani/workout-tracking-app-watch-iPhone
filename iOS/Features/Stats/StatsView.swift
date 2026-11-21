@@ -72,7 +72,7 @@ struct StatsView: View {
             .frame(height: 180)
             .accessibilityChartDescriptor(DatedChartDescriptor(
                 title: byMonth ? "Workouts per month" : "Workouts per week", valueName: "Workouts", points: points
-            ) { "\(Int($0)) workouts" })
+            ) { plural(Int($0), "workout") })
         } header: {
             Text(byMonth ? "Workouts per month" : "Workouts per week")
         }

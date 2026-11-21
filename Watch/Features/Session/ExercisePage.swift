@@ -69,7 +69,7 @@ struct ExercisePage: View {
                     .onTapGesture { focus = .reps }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Reps")
-                    .accessibilityValue("\(live.reps) reps")
+                    .accessibilityValue(plural(live.reps, "rep"))
                     .accessibilityAdjustableAction { live.stepReps($0 == .increment ? 1 : -1) }
             }
             .defaultFocus($focus, .weight)
@@ -78,7 +78,7 @@ struct ExercisePage: View {
                 Text("Log Set").font(.title3.bold()).frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Log set \(setNumber): \(weightUnit.spoken(live.weightKg)), \(live.reps) reps")
+            .accessibilityLabel("Log set \(setNumber): \(weightUnit.spoken(live.weightKg)), \(plural(live.reps, "rep"))")
 
             if !live.prHits.isEmpty {
                 Label("PR", systemImage: "trophy.fill")

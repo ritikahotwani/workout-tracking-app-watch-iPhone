@@ -46,15 +46,16 @@ public enum SetGraphImport {
     static let strengthTypes: Set<String> = ["Strength Training", "Functional Strength Training", "Core Training"]
     static let syntheticType = "Synthetic"
 
-    /// Approved typo merges: source nameKey → display name of the target.
+    /// Approved merges: source nameKey → display name of the target (some are built-ins, spelled exactly).
     static let aliases: [String: String] = [
         "dumbell shrugs": "Dumbbell Shrugs",
-        "squats": "Squat",
+        "squats": "Back Squat", "squat": "Back Squat",
         "dead lift": "Deadlift",
-        "tricep push down": "Tricep Pushdown",
+        "tricep push down": "Triceps Pushdown", "tricep pushdown": "Triceps Pushdown",
+        "chest press": "Chest Press Machine",
         "leg extentions": "Leg Extension",
         "barbell shrugs": "Barbell Shrug",
-        "seated inclined db curls": "Seated Incline DB Curl",
+        "seated incline db curl": "Incline Dumbbell Curl", "seated inclined db curls": "Incline Dumbbell Curl",
         "hammer curls": "Hammer Curl", "dumbbell hammer curl": "Hammer Curl",
         "dumbell side laterals": "DB Side Lateral Raise", "db side lateral raises": "DB Side Lateral Raise",
     ]
@@ -296,6 +297,12 @@ public enum SetGraphImport {
                 for set in members where !existing.importKeys.contains(set.importKey) {
                     fail(.sets, set.line, "belongs to an already-imported session, skipped")
                 }
+                continue
+            }
+            // Its sets all came in earlier (e.g. under synthetic sessions from a sets-only import): an empty
+            // copy would be a duplicate. Cardio sessions are kept, as they carry their own entry.
+            if !isCardio, !members.isEmpty, alreadyHere == members.count {
+                plan.alreadyImported += 1
                 continue
             }
 

@@ -18,6 +18,8 @@ final class BackupController {
     private(set) var isRestoring = false
     private(set) var lastBackupAt = UserDefaults.standard.object(forKey: "lastBackupAt") as? Date
     private(set) var lastErrorMessage: String?
+    /// Signed in, but this iPhone holds another account's data: Settings asks before replacing it.
+    private(set) var pendingAccountSwitch: UUID?
 
     var isConfigured: Bool { client != nil }
 
@@ -34,6 +36,7 @@ final class BackupController {
         client = DemoData.isEnabled ? nil : SupabaseClient.fromInfoPlist()
         engine = client.map { SyncEngine(container: container, remote: SupabaseRemoteStore(client: $0)) }
         userID = client?.auth.currentUser?.id
+        if let userID { UserDefaults.standard.set(userID.uuidString, forKey: Self.lastUserKey) }
 
         monitor.pathUpdateHandler = { [weak self] path in
             let isOnline = path.status == .satisfied
@@ -81,15 +84,50 @@ final class BackupController {
             guard let idToken else { throw ASAuthorizationError(.failed) }
             let session = try await client.auth.signInWithIdToken(
                 credentials: .init(provider: .apple, idToken: idToken, nonce: nonce))
-            userID = session.user.id
-            lastErrorMessage = nil
-            isRestoring = true
-            syncNow()
+            let newID = session.user.id
+            if let last = UserDefaults.standard.string(forKey: Self.lastUserKey).flatMap(UUID.init(uuidString:)),
+               last != newID, (try? SyncEngine.hasRows(ownedBy: last, in: container.mainContext)) == true
+            {
+                pendingAccountSwitch = newID
+                return
+            }
+            adopt(newID)
         } catch let error as URLError {
             lastErrorMessage = friendlyMessage(for: error)
         } catch {
             lastErrorMessage = "Couldn't sign in. Please try again."
         }
+    }
+
+    /// Account switch confirmed: wipes local rows (built-ins re-seeded), then restores `pendingAccountSwitch`.
+    func replaceLocalData() async {
+        guard let engine, let newID = pendingAccountSwitch else { return }
+        pendingAccountSwitch = nil
+        do {
+            try SyncEngine.wipeLocalData(container.mainContext)
+            await engine.clearCursors(userID: newID)
+            adopt(newID)
+        } catch {
+            print("Wipe before account switch failed: \(error)")
+            await signOut()
+            lastErrorMessage = "Couldn't replace the data on this iPhone. Please try again."
+        }
+    }
+
+    /// Account switch declined: keep the local data and sign back out.
+    func cancelAccountSwitch() async {
+        pendingAccountSwitch = nil
+        await signOut()
+    }
+
+    private static let lastUserKey = "lastSignedInUserID"
+
+    private func adopt(_ id: UUID) {
+        userID = id
+        UserDefaults.standard.set(id.uuidString, forKey: Self.lastUserKey)
+        lastErrorMessage = nil
+        isRestoring = true
+        syncNow()
     }
 
     /// Signs out this device only. Local data stays; it just stops backing up.

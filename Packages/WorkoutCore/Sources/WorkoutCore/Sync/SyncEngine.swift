@@ -54,7 +54,8 @@ public struct SyncResult: Sendable, Equatable {
     public var finishedAt: Date
 }
 
-/// Push-then-pull sync with Supabase (PLAN §3.2). Single-flight: concurrent calls share one run.
+/// Push-then-pull sync with Supabase (PLAN §3.2). Single-flight: concurrent calls for the same user share
+/// one run; a call for another user waits for the current run to finish.
 public actor SyncEngine {
     /// Table name per DTO, in dependency order.
     public static var tables: [(dto: any SyncDTO.Type, table: String)] {
@@ -69,7 +70,7 @@ public actor SyncEngine {
     let defaults: UserDefaults
     let pageSize: Int
     let pushBatchSize = 500
-    private var inFlight: Task<SyncResult, Error>?
+    private var inFlight: (userID: UUID, task: Task<SyncResult, Error>)?
 
     /// Pull cursors persist in `UserDefaults(suiteName: defaultsSuite)` (standard when nil), keyed by user and table.
     public init(container: ModelContainer, remote: any RemoteStore, defaultsSuite: String? = nil, pageSize: Int = 1000) {
@@ -80,18 +81,42 @@ public actor SyncEngine {
     }
 
     public func sync(userID: UUID) async throws -> SyncResult {
-        if let inFlight { return try await inFlight.value }
+        while let current = inFlight {
+            if current.userID == userID { return try await current.task.value }
+            _ = try? await current.task.value
+            // Its caller may not have resumed yet; clear it here or this loop spins on a finished task.
+            if inFlight?.task == current.task { inFlight = nil }
+        }
         let task = Task { try await run(userID: userID) }
-        inFlight = task
-        defer { inFlight = nil }
+        inFlight = (userID, task)
+        defer { if inFlight?.task == task { inFlight = nil } }
         return try await task.value
     }
 
     private func run(userID: UUID) async throws -> SyncResult {
         var pushed = 0, pulled = 0
-        for t in Self.tables { pushed += try await push(t.dto, table: t.table, userID: userID) }
-        for t in Self.tables { pulled += try await pull(t.dto, table: t.table, userID: userID) }
+        // A failed push must not block restore: pull anyway, then report the push error.
+        var pushError: Error?
+        do {
+            for t in Self.tables { pushed += try await push(t.dto, table: t.table, userID: userID) }
+        } catch { pushError = error }
+        do {
+            for t in Self.tables {
+                let n = try await pull(t.dto, table: t.table, userID: userID)
+                if t.table == "body_weight_entries", n > 0 { try dedupeBodyWeights() }
+                pulled += n
+            }
+        } catch { throw pushError ?? error }
+        if let pushError { throw pushError }
         return SyncResult(pushed: pushed, pulled: pulled, finishedAt: .now)
+    }
+
+    /// A restore can bring back rows for Health samples this install already imported.
+    private func dedupeBodyWeights() throws {
+        let ctx = ModelContext(container)
+        let live = try ctx.fetch(FetchDescriptor<BodyWeightEntry>(predicate: #Predicate {
+            $0.deletedAt == nil && $0.healthKitSampleID != nil }))
+        if BodyWeightDedupe.dedupe(live) > 0 { try ctx.save() }
     }
 
     // ModelContexts are short-lived and never held across an `await`, so each read sees the store's
@@ -100,7 +125,10 @@ public actor SyncEngine {
     private func push<D: SyncDTO>(_: D.Type, table: String, userID: UUID) async throws -> Int {
         var pushed = 0
         while true {
-            var descriptor = FetchDescriptor<D.Model>(predicate: #Predicate { $0.needsPush == true })
+            // Rows owned by another account (left from before an account switch) are never pushed.
+            let owner: UUID? = userID
+            var descriptor = FetchDescriptor<D.Model>(predicate: #Predicate {
+                $0.needsPush == true && ($0.userID == nil || $0.userID == owner) })
             descriptor.fetchLimit = pushBatchSize
             let dirty = try ModelContext(container).fetch(descriptor)
             if dirty.isEmpty { return pushed }
@@ -124,8 +152,39 @@ public actor SyncEngine {
         }
     }
 
+    // MARK: Account switch
+
+    /// Whether any synced row belongs to `owner`.
+    public static func hasRows(ownedBy owner: UUID, in context: ModelContext) throws -> Bool {
+        func owns<D: SyncDTO>(_: D.Type) throws -> Bool {
+            let o: UUID? = owner
+            var d = FetchDescriptor<D.Model>(predicate: #Predicate { $0.userID == o })
+            d.fetchLimit = 1
+            return try context.fetchCount(d) > 0
+        }
+        for t in tables where try owns(t.dto) { return true }
+        return false
+    }
+
+    /// Hard-deletes every synced row, then re-seeds the built-in exercises. Saves.
+    public static func wipeLocalData(_ context: ModelContext) throws {
+        func wipe<D: SyncDTO>(_: D.Type) throws {
+            for m in try context.fetch(FetchDescriptor<D.Model>()) { context.delete(m) }
+        }
+        for t in tables { try wipe(t.dto) }
+        try context.save()
+        try ExerciseLibrary.seedIfNeeded(context)
+    }
+
+    /// Forgets `userID`'s pull cursors, so the next sync is a full restore.
+    public func clearCursors(userID: UUID) {
+        for t in Self.tables { defaults.removeObject(forKey: cursorKey(userID, t.table)) }
+    }
+
+    private func cursorKey(_ userID: UUID, _ table: String) -> String { "syncCursor.\(userID.uuidString).\(table)" }
+
     private func pull<D: SyncDTO>(_: D.Type, table: String, userID: UUID) async throws -> Int {
-        let key = "syncCursor.\(userID.uuidString).\(table)"
+        let key = cursorKey(userID, table)
         var cursor = defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(SyncCursor.self, from: $0) }
         var applied = 0
         while true {
@@ -138,8 +197,24 @@ public actor SyncEngine {
             try ctx.save()
             cursor = SyncCursor(serverUpdatedAt: last.serverUpdatedAt, id: last.row.id)
             defaults.set(try JSONEncoder().encode(cursor), forKey: key)
-            if page.count < pageSize { return applied }
         }
+    }
+}
+
+extension BodyWeightDedupe {
+    /// Leaves one live entry per Health sample: the one not imported from Health, else the oldest
+    /// `createdAt`. Soft-deletes the rest (so the deletion syncs) and returns how many.
+    @discardableResult
+    public static func dedupe(_ entries: [BodyWeightEntry]) -> Int {
+        var deleted = 0
+        let live = entries.filter { $0.deletedAt == nil && $0.healthKitSampleID != nil }
+        for group in Dictionary(grouping: live, by: \.healthKitSampleID).values where group.count > 1 {
+            let keep = group.min { a, b in
+                (a.source == .health) != (b.source == .health) ? b.source == .health : a.createdAt < b.createdAt
+            }!
+            for e in group where e !== keep { e.markDeleted(); deleted += 1 }
+        }
+        return deleted
     }
 }
 

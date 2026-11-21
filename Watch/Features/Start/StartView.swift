@@ -5,11 +5,24 @@ import WorkoutCore
 struct StartView: View {
     @Environment(\.modelContext) private var context
     @Environment(WatchSync.self) private var sync
+    @Environment(WatchAppDelegate.self) private var delegate
     @Query(filter: #Predicate<Routine> { $0.deletedAt == nil }, sort: \Routine.sortOrder)
     private var routines: [Routine]
     @State private var live: LiveSession?
+    @State private var recovering = false
 
     var body: some View {
+        content
+            // At launch, and again if watchOS asks after a crash mid-workout.
+            .task(id: delegate.recoveryRequests) {
+                guard live == nil, !recovering else { return }
+                recovering = true
+                if let session = await LiveSession.recover(in: context, snapshots: sync.snapshots) { live = session }
+                recovering = false
+            }
+    }
+
+    @ViewBuilder private var content: some View {
         if let live {
             SessionView(live: live) {
                 self.live = nil
@@ -29,6 +42,7 @@ struct StartView: View {
                     }
                 }
                 .navigationTitle("Workout")
+                .disabled(recovering)
             }
         }
     }

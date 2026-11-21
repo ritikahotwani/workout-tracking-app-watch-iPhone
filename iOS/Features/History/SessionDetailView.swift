@@ -23,6 +23,8 @@ struct SessionDetailView: View {
     var body: some View {
         let blocks = loadBlocks()
         let logged = (try? Queries.loggedSets(in: context)) ?? []
+        let title = sessionTitle(session, routines: routines, exercises: exercises,
+                                 sets: logged.filter { $0.sessionID == session.id })
         let records = logged.compactMap(\.record)
         let mine = records.filter { $0.sessionID == session.id }
         let prs = prMarkers(blocks, history: records)
@@ -55,7 +57,7 @@ struct SessionDetailView: View {
             }
             compareSection(blocks, records: records)
         }
-        .navigationTitle(sessionTitle(session, routines: routines))
+        .navigationTitle(title)
         .onAppear { noteDraft = session.note ?? "" }
         .onDisappear(perform: saveNote)
     }
@@ -196,19 +198,19 @@ private struct CompareRow: View {
         .accessibilityLabel([
             title,
             "volume \(unit.spokenVolume(c.current.volume)), \(volume.spoken)",
-            c.current.topSet.flatMap { set in top.map { "top set \(unit.spoken(set.weightKg)) for \(set.reps) reps, \($0.spoken)\(repsSpoken)" } },
+            c.current.topSet.flatMap { set in top.map { "top set \(unit.spoken(set.weightKg)) for \(plural(set.reps, "rep")), \($0.spoken)\(repsSpoken)" } },
             c.current.bestE1RM.flatMap { e in e1rm.map { "estimated one-rep max \(unit.spoken(e)), \($0.spoken)" } },
         ].compactMap { $0 }.joined(separator: ". "))
     }
 
     private var repsShort: String {
         guard let d = comparison.topSetRepsDelta, d != 0 else { return "" }
-        return d > 0 ? ", ▲ \(d) reps" : ", ▼ \(-d) reps"
+        return d > 0 ? ", ▲ \(plural(d, "rep"))" : ", ▼ \(plural(-d, "rep"))"
     }
 
     private var repsSpoken: String {
         guard let d = comparison.topSetRepsDelta, d != 0 else { return "" }
-        return d > 0 ? ", \(d) more reps" : ", \(-d) fewer reps"
+        return d > 0 ? ", \(plural(d, "more rep"))" : ", \(plural(-d, "fewer rep"))"
     }
 
     private func delta(_ kg: Double, whole: Bool = false) -> (short: String, spoken: String) {

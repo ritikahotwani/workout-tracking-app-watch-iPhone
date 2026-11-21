@@ -44,7 +44,7 @@ private struct MetricsPage: View {
             .accessibilityLabel([
                 "Elapsed \(spokenDuration(elapsed))",
                 hr.map { "heart rate \($0)" } ?? "heart rate unavailable",
-                "\(kcal) calories",
+                plural(kcal, "calorie"),
                 live.manager.isPaused ? "paused" : nil,
             ].compactMap { $0 }.joined(separator: ", "))
         }
@@ -87,7 +87,7 @@ private struct ControlsPage: View {
                             Text("\(item.sets.count)").foregroundStyle(.secondary)
                         }
                     }
-                    .accessibilityLabel("Exercise \(i + 1) of \(live.items.count): \(item.exercise.name), \(item.sets.count) sets logged")
+                    .accessibilityLabel("Exercise \(i + 1) of \(live.items.count): \(item.exercise.name), \(plural(item.sets.count, "set")) logged")
                     .accessibilityAddTraits(i == live.index ? .isSelected : [])
                 }
             }

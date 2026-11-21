@@ -11,7 +11,8 @@ final class WorkoutManager: NSObject {
     private let store = HKHealthStore()
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
-    private var startDate: Date?
+    /// Fallback for `elapsed` without a Health session; tracks pauses itself.
+    private var wallClock: PauseClock?
     /// Outdoor activity's Health distance type and the workout total when it began.
     private var cardioDistanceType: HKQuantityType?
     private var cardioDistanceStart = 0.0
@@ -62,22 +63,44 @@ final class WorkoutManager: NSObject {
     }
 
     /// Wall-clock origin for `elapsed` until (or unless) Health collection starts.
-    func setStart(_ date: Date) { startDate = date }
+    func setStart(_ date: Date) { wallClock = PauseClock(start: date) }
 
     func pause() {
         isPaused = true
         session?.pause()
+        wallClock?.pause(at: .now)
     }
 
     func resume() {
         isPaused = false
         session?.resume()
+        wallClock?.resume(at: .now)
     }
 
-    /// Active (unpaused) time. Falls back to wall clock without a Health session.
+    /// Active (unpaused) time. Falls back to wall clock minus pauses without a Health session.
     func elapsed(at date: Date) -> TimeInterval {
         if let builder { return builder.elapsedTime(at: date) }
-        return startDate.map { date.timeIntervalSince($0) } ?? 0
+        return wallClock?.elapsed(at: date) ?? 0
+    }
+
+    /// Re-attaches the Health workout left running by a crash, with its builder and delegates.
+    /// False when there is none to recover.
+    func recover() async throws -> Bool {
+        guard HKHealthStore.isHealthDataAvailable(), let session = try await store.recoverActiveWorkoutSession() else {
+            return false
+        }
+        let builder = session.associatedWorkoutBuilder()
+        builder.dataSource = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: session.workoutConfiguration)
+        session.delegate = self
+        builder.delegate = self
+        // A cardio activity running at the crash isn't restored in the UI; end it so the next one can begin.
+        if session.currentActivity.workoutConfiguration.activityType != session.workoutConfiguration.activityType {
+            session.endCurrentActivity(on: .now)
+        }
+        self.session = session
+        self.builder = builder
+        isPaused = session.state == .paused
+        return true
     }
 
     /// Starts a cardio activity inside the session. Outdoors Health measures distance live;

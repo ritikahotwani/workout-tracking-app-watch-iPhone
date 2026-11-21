@@ -23,6 +23,10 @@ struct WorkoutTab: View {
             .navigationDestination(for: WorkoutSession.self) { SessionDetailView(session: $0) }
         }
         .fullScreenCover(item: $live) { PhoneSessionView(live: $0) { live = nil } }
+        .task {  // after a crash: continue the running Health workout, else close open sessions
+            guard live == nil else { return }
+            if let session = await LiveSession.recover(in: context) { live = session }
+        }
     }
 
     private func begin(_ routine: Routine?) {

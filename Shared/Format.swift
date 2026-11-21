@@ -34,6 +34,11 @@ extension DistanceUnit {
     }
 }
 
+/// "1 set", "2 sets" (regular English plurals only).
+func plural(_ n: Int, _ noun: String) -> String {
+    "\(n.formatted()) \(n == 1 ? noun : noun + "s")"
+}
+
 /// "5 minutes, 30 seconds" — never "5:30" for VoiceOver.
 func spokenDuration(_ seconds: TimeInterval) -> String {
     Duration.seconds(Int(seconds.rounded())).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide))
@@ -62,8 +67,8 @@ func lastLine(_ sets: [SetEntry], weight: WeightUnit, distance: DistanceUnit) ->
     let pairs = sets.map { ($0.weightKg ?? 0, $0.reps ?? 0) }
     if let first = pairs.first, pairs.allSatisfy({ $0 == first }) {
         return ("Last \(pairs.count)×\(first.1) @ \(weight.short(first.0))",
-                "Last time: \(pairs.count) \(pairs.count == 1 ? "set" : "sets"), \(first.1) reps at \(weight.spoken(first.0))")
+                "Last time: \(plural(pairs.count, "set")), \(plural(first.1, "rep")) at \(weight.spoken(first.0))")
     }
     return ("Last " + pairs.map { "\(weight.short($0.0))×\($0.1)" }.joined(separator: " · "),
-            "Last time: " + pairs.map { "\($0.1) reps at \(weight.spoken($0.0))" }.joined(separator: ", "))
+            "Last time: " + pairs.map { "\(plural($0.1, "rep")) at \(weight.spoken($0.0))" }.joined(separator: ", "))
 }

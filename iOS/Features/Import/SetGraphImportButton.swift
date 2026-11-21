@@ -97,7 +97,7 @@ struct SetGraphImportButton: View {
         preview = nil
         do {
             try plan.commit(into: context)
-            message = Message(title: "Import complete", body: "Added \(plan.sessions.count.formatted()) workouts, \(plan.sets.count.formatted()) sets and \(plan.exercisesCreated.count) new exercises.")
+            message = Message(title: "Import complete", body: "Added \(plural(plan.sessions.count, "workout")), \(plural(plan.sets.count, "set")) and \(plural(plan.exercisesCreated.count, "new exercise")).")
             backup.syncSoon()
         } catch {
             context.rollback()
@@ -144,7 +144,7 @@ struct ImportPreviewView: View {
 
                 if !plan.errors.isEmpty {
                     Section {
-                        issues("Show \(plan.errors.count) rows", plan.errors)
+                        issues("Show \(plural(plan.errors.count, "row"))", plan.errors)
                     } header: {
                         Text("Couldn't read")
                     } footer: {
@@ -163,8 +163,8 @@ struct ImportPreviewView: View {
                 if !plan.aliasMerges.isEmpty {
                     Section("Merged spellings") {
                         ForEach(plan.aliasMerges, id: \.from) { m in
-                            LabeledContent("\(m.from) → \(m.to)", value: "\(m.rows) sets")
-                                .accessibilityLabel("\(m.from) merged into \(m.to), \(m.rows) sets")
+                            LabeledContent("\(m.from) → \(m.to)", value: plural(m.rows, "set"))
+                                .accessibilityLabel("\(m.from) merged into \(m.to), \(plural(m.rows, "set"))")
                         }
                     }
                 }

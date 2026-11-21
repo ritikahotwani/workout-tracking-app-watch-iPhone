@@ -201,13 +201,13 @@ struct Device {
         let b = try Device(fake, pageSize: 3)
         let first = try await b.engine.sync(userID: user)
         #expect(first.pulled == 7)
-        #expect(await fake.fetchCalls["set_entries"] == before + 3)  // 3 + 3 + 1
+        #expect(await fake.fetchCalls["set_entries"] == before + 4)  // 3 + 3 + 1 + empty
         try b.read(SetEntry.self) { #expect(Set($0.map(\.sortOrder)) == Set(0..<7)) }
 
         // Cursor persisted in defaults: a new engine on the same device fetches nothing new.
         let again = SyncEngine(container: b.container, remote: fake, defaultsSuite: b.defaultsSuite, pageSize: 3)
         #expect(try await again.sync(userID: user).pulled == 0)
-        #expect(await fake.fetchCalls["set_entries"] == before + 4)
+        #expect(await fake.fetchCalls["set_entries"] == before + 5)
     }
 
     @Test func fullRestoreIntoEmptyContainer() async throws {
@@ -296,5 +296,88 @@ struct Device {
 
         #expect(results[0] == results[1])
         #expect(await fake.upsertCalls["routines"] == 1)
+    }
+
+    @Test func otherUsersRowsAreNotPushed() async throws {
+        let fake = FakeRemoteStore(userID: user)
+        let phone = try Device(fake)
+        try phone.insert(Routine(name: "Mine", updatedAt: t0), Routine(name: "Theirs", userID: UUID(), updatedAt: t0))
+
+        #expect(try await phone.engine.sync(userID: user).pushed == 1)
+        #expect(try await fake.rows(RoutineDTO.self, "routines").map(\.name) == ["Mine"])
+        try phone.read(Routine.self) { rs in #expect(rs.first { $0.name == "Theirs" }!.needsPush) }
+    }
+
+    @Test func syncForAnotherUserWaitsInsteadOfCoalescing() async throws {
+        let fake = FakeRemoteStore(userID: user)
+        let phone = try Device(fake)
+        try phone.insert(Routine(name: "Chest", updatedAt: t0))
+        await fake.setOnUpsert { try await Task.sleep(for: .milliseconds(100)) }
+
+        let engine = phone.engine, user = user
+        let first = Task { try await engine.sync(userID: user) }
+        try await Task.sleep(for: .milliseconds(20))  // first run is mid-push
+        let other = try await engine.sync(userID: UUID())
+        let mine = try await first.value
+
+        #expect(mine.pushed == 1 && other.pushed == 0)  // the row is the first user's by then
+        #expect(other.finishedAt >= mine.finishedAt)
+        #expect(await fake.fetchCalls["routines"] == 4)  // two separate runs, each a page + the empty page
+    }
+
+    @Test func failedPushStillPulls() async throws {
+        let fake = FakeRemoteStore(userID: user)
+        var remote = RoutineDTO(Routine(name: "Backed up", updatedAt: t0))
+        remote.userID = user
+        try await fake.upsert([remote], table: "routines")
+        await fake.setFailUpsert(URLError(.timedOut))
+        let phone = try Device(fake)
+        try phone.insert(Routine(name: "Local", updatedAt: t0))
+
+        await #expect(throws: URLError.self) { try await phone.engine.sync(userID: user) }
+
+        try phone.read(Routine.self) { #expect(Set($0.map(\.name)) == ["Backed up", "Local"]) }
+    }
+
+    @Test func restoreDedupesHealthBodyWeights() async throws {
+        let fake = FakeRemoteStore(userID: user)
+        let s1 = UUID(), s2 = UUID()
+        let old = try Device(fake)
+        let b1 = BodyWeightEntry(weightKg: 70, healthKitSampleID: s1, source: .health, createdAt: t0, updatedAt: t0)
+        let b2 = BodyWeightEntry(weightKg: 71, healthKitSampleID: s2, source: .app, createdAt: t0 + 200, updatedAt: t0)
+        let backupIDs: Set = [b1.id, b2.id]
+        try old.insert(b1, b2)
+        _ = try await old.engine.sync(userID: user)
+
+        // Fresh install: Health import runs before the first restore.
+        let fresh = try Device(fake)
+        try fresh.insert(BodyWeightEntry(weightKg: 70, healthKitSampleID: s1, source: .health, createdAt: t0 + 100, updatedAt: t0 + 100),
+                         BodyWeightEntry(weightKg: 71, healthKitSampleID: s2, source: .health, createdAt: t0 + 100, updatedAt: t0 + 100))
+        _ = try await fresh.engine.sync(userID: user)
+
+        try fresh.read(BodyWeightEntry.self) { rows in
+            let live = rows.filter { $0.deletedAt == nil }
+            #expect(Set(live.map(\.id)) == backupIDs)
+            #expect(rows.filter { $0.deletedAt != nil }.allSatisfy { $0.needsPush })  // deletion syncs
+        }
+    }
+
+    @Test func wipeLocalDataKeepsOnlyFreshSeeds() async throws {
+        let fake = FakeRemoteStore(userID: user)
+        let phone = try Device(fake)
+        let other = UUID()
+        try phone.insert(Routine(name: "Theirs", userID: other, updatedAt: t0),
+                         Exercise(id: Exercise.builtInID(for: "Bench Press"), name: "Bench Press", isBuiltIn: true,
+                                  defaultRestSeconds: 30, userID: other, updatedAt: t0))
+        let ctx = ModelContext(phone.container)
+        #expect(try SyncEngine.hasRows(ownedBy: other, in: ctx))
+
+        try SyncEngine.wipeLocalData(ctx)
+
+        #expect(try SyncEngine.hasRows(ownedBy: other, in: ctx) == false)
+        try phone.read(Routine.self) { #expect($0.isEmpty) }
+        try phone.read(Exercise.self) { exs in
+            #expect(exs.count == ExerciseLibrary.builtIns.count && exs.allSatisfy { $0.userID == nil && !$0.needsPush })
+        }
     }
 }

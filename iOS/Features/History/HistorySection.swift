@@ -8,6 +8,7 @@ struct HistorySection: View {
     @Query(filter: #Predicate<WorkoutSession> { $0.deletedAt == nil && $0.endedAt != nil },
            sort: \WorkoutSession.startedAt, order: .reverse) private var sessions: [WorkoutSession]
     @Query private var routines: [Routine]  // deleted ones too, so old sessions keep their name
+    @Query private var exercises: [Exercise]
     @AppStorage("weightUnit") private var weightUnit: WeightUnit = .kg
 
     var body: some View {
@@ -20,7 +21,8 @@ struct HistorySection: View {
             ForEach(sessions) { session in
                 let sets = bySession[session.id] ?? []
                 NavigationLink(value: session) {
-                    row(session, sets: sets.count, volume: Volume.total(sets.compactMap(\.record)))
+                    row(session, title: sessionTitle(session, routines: routines, exercises: exercises, sets: sets),
+                        sets: sets.count, volume: Volume.total(sets.compactMap(\.record)))
                 }
             }
             .onDelete { offsets in
@@ -31,15 +33,14 @@ struct HistorySection: View {
         }
     }
 
-    private func row(_ s: WorkoutSession, sets: Int, volume: Double) -> some View {
-        let title = sessionTitle(s, routines: routines)
+    private func row(_ s: WorkoutSession, title: String, sets: Int, volume: Double) -> some View {
         let minutes = activeDuration(s)
         return VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.headline)
             Text([
                 s.startedAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)),
                 shortDuration(minutes),
-                "\(sets) sets",
+                plural(sets, "set"),
                 volume > 0 ? weightUnit.volume(volume) : nil,
             ].compactMap { $0 }.joined(separator: " · "))
             .font(.subheadline).foregroundStyle(.secondary)
@@ -49,7 +50,7 @@ struct HistorySection: View {
             title,
             s.startedAt.formatted(.dateTime.weekday(.wide).day().month(.wide)),
             spokenMinutes(minutes),
-            "\(sets) \(sets == 1 ? "set" : "sets")",
+            plural(sets, "set"),
             volume > 0 ? "volume \(weightUnit.spokenVolume(volume))" : nil,
         ].compactMap { $0 }.joined(separator: ", "))
     }
@@ -57,8 +58,11 @@ struct HistorySection: View {
 
 // MARK: Shared display helpers (history and stats)
 
-func sessionTitle(_ s: WorkoutSession, routines: [Routine]) -> String {
-    s.routineID.flatMap { id in routines.first { $0.id == id }?.name } ?? "Workout"
+/// Routine name, else the cardio exercise or top muscle groups of `sets` (the session's logged sets), else "Workout".
+func sessionTitle(_ s: WorkoutSession, routines: [Routine], exercises: [Exercise], sets: [Queries.LoggedSet]) -> String {
+    let byID = Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    return SessionTitle.make(routine: s.routineID.flatMap { id in routines.first { $0.id == id }?.name },
+                             setExercises: sets.compactMap { byID[$0.exerciseID] })
 }
 
 /// Active time: wall clock minus paused time.
@@ -121,7 +125,7 @@ struct SetRow: View {
     private var text: (short: String, spoken: String) {
         if let reps = set.reps {
             let kg = set.weightKg ?? 0
-            return ("\(weightUnit.short(kg)) \(weightUnit.rawValue) × \(reps)", "\(weightUnit.spoken(kg)), \(reps) reps")
+            return ("\(weightUnit.short(kg)) \(weightUnit.rawValue) × \(reps)", "\(weightUnit.spoken(kg)), \(plural(reps, "rep"))")
         }
         let d = set.distanceMeters
         let t = set.durationSeconds ?? 0

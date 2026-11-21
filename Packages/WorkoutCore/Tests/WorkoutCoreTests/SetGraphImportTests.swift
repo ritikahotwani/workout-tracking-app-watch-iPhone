@@ -33,7 +33,7 @@ private func session(_ type: String, _ start: String, _ end: String, duration: S
     // MARK: Fixture with every case at once
 
     static let fixtureSets = sets(
-        set("Squats", "2025-10-06 10:05:00", note: "knee, \"ok\""),                    // 2  alias → Squat
+        set("Squats", "2025-10-06 10:05:00", note: "knee, \"ok\""),                    // 2  alias → Back Squat
         set("Squats", "2025-10-06 10:05:00", note: "knee, \"ok\""),                    // 3  duplicate
         set("Squats", "2025-10-06 10:07:00", note: "knee, \"ok\""),                    // 4  same note, deduped
         set("Bench Press", "2025-10-06 10:31:00", reps: "8.0", kg: "0"),              // 5  in Walking overlap → strength
@@ -66,13 +66,13 @@ private func session(_ type: String, _ start: String, _ end: String, duration: S
         #expect(p.errors.map { "\($0.file.rawValue):\($0.line)" } == ["sessions:6", "sets:9", "sets:10", "sets:11", "sets:12", "sets:13"])
         #expect(p.errors.first { $0.line == 6 }?.reason == "end before start")
         #expect(p.errors.first { $0.line == 13 }?.reason == "expected 9 fields, found 10")
-        #expect(p.aliasMerges == [.init(from: "Squats", to: "Squat", rows: 2)])
+        #expect(p.aliasMerges == [.init(from: "Squats", to: "Back Squat", rows: 2)])
         #expect(p.alreadyImported == 0)
 
         let strength = p.sessions.first { $0.importKey == "setgraph:session:Strength Training|2025-10-06 10:00:00" }!
         #expect(strength.note == "Felt good, \"strong\"" && strength.pausedSeconds == 600 && strength.source == "import")
         let squatEntry = p.sessionExercises.first { $0.sessionID == strength.id && $0.sortOrder == 0 }!
-        #expect(exerciseName(p, entry: squatEntry) == "Squat")
+        #expect(exerciseName(p, entry: squatEntry) == "Back Squat")
         #expect(squatEntry.note == "knee, \"ok\"")
         #expect(p.sessionExercises.filter { $0.sessionID == strength.id }.count == 3)  // Squat, Bench, Plank
     }
@@ -97,9 +97,9 @@ private func session(_ type: String, _ start: String, _ end: String, duration: S
             set("DB Side Lateral Raises", "2025-10-06 10:12:00")),
             existing: .init(exercises: ["deadlift": deadlift]))
         #expect(p.exercisesMatched == 1)
-        #expect(p.exercisesCreated.map(\.name).sorted() == ["DB Side Lateral Raise", "Hammer Curl", "Seated Incline DB Curl", "Side Lateral Raises"])
+        #expect(p.exercisesCreated.map(\.name).sorted() == ["DB Side Lateral Raise", "Hammer Curl", "Incline Dumbbell Curl", "Side Lateral Raises"])
         #expect(p.sessionExercises.filter { $0.exerciseID == deadlift }.count == 1)  // both spellings in one entry
-        #expect(p.aliasMerges.map(\.from) == ["DB Side Lateral Raises", "Dead Lift", "Dumbbell Hammer Curl", "Hammer Curls"])
+        #expect(p.aliasMerges.map(\.from) == ["DB Side Lateral Raises", "Dead Lift", "Dumbbell Hammer Curl", "Hammer Curls", "Seated Incline Db Curl"])
     }
 
     @Test(arguments: [
@@ -225,7 +225,7 @@ private func session(_ type: String, _ start: String, _ end: String, duration: S
         try ExerciseLibrary.seedIfNeeded(ctx)
         let first = SetGraphImport.plan(setsCSV: Self.fixtureSets, sessionsCSV: Self.fixtureSessions,
                                         existing: try .init(context: ctx), timeZone: utc)
-        #expect(first.exercisesMatched == 4)  // Bench Press, Plank, Walking, Outdoor Cycling
+        #expect(first.exercisesMatched == 5)  // Back Squat, Bench Press, Plank, Walking, Outdoor Cycling
         try first.commit(into: ctx)
 
         #expect(try ctx.fetchCount(FetchDescriptor<WorkoutSession>()) == first.sessions.count)
@@ -254,5 +254,39 @@ private func session(_ type: String, _ start: String, _ end: String, duration: S
         let p = plan(Self.sets(set("Row", "2025-10-06 10:00:00"), set("Row", "2025-10-06 10:05:00")), existing: existing)
         #expect(p.isEmpty && p.alreadyImported == 1)
         #expect(p.errors.map(\.line) == [2, 3])
+    }
+
+    @MainActor @Test func aliasesPointAtBuiltIns() throws {
+        let container = try makeModelContainer(inMemory: true)
+        let ctx = container.mainContext
+        try ExerciseLibrary.seedIfNeeded(ctx)
+        let names = ["Squats", "Squat", "Tricep Push Down", "Tricep Pushdown", "Chest Press", "Seated Incline DB Curl",
+                     "Seated Inclined DB Curls", "Shrugs", "Lateral Raises", "Bicep Curls", "Leg Curl"]
+        let p = SetGraphImport.plan(
+            setsCSV: ([Self.setsHeader] + names.enumerated().map { set($1, "2025-10-06 10:\(String(format: "%02d", $0)):00") })
+                .joined(separator: "\n"),
+            sessionsCSV: nil, existing: try .init(context: ctx), timeZone: utc)
+        let builtIns = ["Back Squat", "Triceps Pushdown", "Chest Press Machine", "Incline Dumbbell Curl"]
+        #expect(Set(p.sessionExercises.map(\.exerciseID)).isSuperset(of: builtIns.map(Exercise.builtInID(for:))))
+        #expect(p.exercisesMatched == 4)
+        #expect(p.exercisesCreated.map(\.name).sorted() == ["Bicep Curls", "Lateral Raises", "Leg Curl", "Shrugs"])
+    }
+
+    @MainActor @Test func setsAloneThenWithSessionsAddsNoEmptySessions() throws {
+        let container = try makeModelContainer(inMemory: true)
+        let ctx = container.mainContext
+        let sets = Self.sets(set("Row", "2025-10-06 10:05:00"), set("Row", "2025-10-06 10:10:00"))
+        let sessions = Self.sessions(
+            session("Strength Training", "2025-10-06 10:00:00", "2025-10-06 11:00:00", duration: "3600"),
+            session("Strength Training", "2025-10-07 10:00:00", "2025-10-07 11:00:00", duration: "3600"))  // no sets
+        try SetGraphImport.plan(setsCSV: sets, sessionsCSV: nil, existing: try .init(context: ctx), timeZone: utc)
+            .commit(into: ctx)
+
+        let p = SetGraphImport.plan(setsCSV: sets, sessionsCSV: sessions, existing: try .init(context: ctx), timeZone: utc)
+
+        // The 10-06 session's sets are already in (synthetic); only the genuinely empty 10-07 session is new.
+        #expect(p.sessions.map(\.importKey) == ["setgraph:session:Strength Training|2025-10-07 10:00:00"])
+        #expect(p.sets.isEmpty && p.sessionExercises.isEmpty)
+        #expect(p.alreadyImported == 2 + 1)  // two sets + the skipped session
     }
 }

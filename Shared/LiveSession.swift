@@ -74,6 +74,26 @@ final class LiveSession {
         manager.setStart(workout.startedAt)
     }
 
+    /// Rebuilds an open session after a crash. A rest countdown or running cardio activity isn't restored.
+    private init(resuming workout: WorkoutSession, context: ModelContext, snapshots: [UUID: ExerciseSnapshot]) {
+        self.context = context
+        self.snapshots = snapshots
+        self.workout = workout
+        let sid = workout.id
+        let entries = (try? context.fetch(FetchDescriptor<SessionExercise>(
+            predicate: #Predicate { $0.sessionID == sid && $0.deletedAt == nil }, sortBy: [SortDescriptor(\.sortOrder)]))) ?? []
+        let targets = workout.routineID.flatMap { try? Queries.routineExercises(routineID: $0, in: context) } ?? []
+        for entry in entries {
+            let eid = entry.exerciseID
+            guard let exercise = try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.id == eid })).first
+            else { continue }
+            append(exercise, target: targets.first { $0.exercise.id == eid }?.item, entry: entry)
+        }
+        index = items.lastIndex { !$0.sets.isEmpty } ?? 0
+        prefill()
+        manager.setStart(workout.startedAt)
+    }
+
     func start() async {
         do {
             try await manager.requestAuthorization()
@@ -107,14 +127,15 @@ final class LiveSession {
         save()
     }
 
-    private func append(_ exercise: Exercise, target: RoutineExercise?) {
-        let entry = SessionExercise(sessionID: workout.id, exerciseID: exercise.id, sortOrder: items.count)
-        context.insert(entry)
+    private func append(_ exercise: Exercise, target: RoutineExercise?, entry existing: SessionExercise? = nil) {
+        let entry = existing ?? SessionExercise(sessionID: workout.id, exerciseID: exercise.id, sortOrder: items.count)
+        if existing == nil { context.insert(entry) }
         let last = (try? Queries.lastPerformance(exerciseID: exercise.id, excludingSession: workout.id, in: context)) ?? []
         let baseline = (try? Queries.prBaseline(exerciseID: exercise.id, excludingSession: workout.id, in: context))
             ?? PRBaseline()
         let snapshot = snapshots[exercise.id]
         items.append(Item(entry: entry, exercise: exercise, target: target,
+                          sets: existing == nil ? [] : (try? Queries.sets(sessionExerciseID: entry.id, in: context)) ?? [],
                           last: snapshot?.lastPerformance(local: last) ?? last,
                           baseline: snapshot.map { baseline.merged(with: $0.baseline) } ?? baseline))
     }
@@ -158,7 +179,7 @@ final class LiveSession {
         if !prHits.isEmpty {
             Self.haptic(success: true)
             let unit = WeightUnit(rawValue: UserDefaults.standard.string(forKey: "weightUnit") ?? "") ?? .kg
-            message += " New personal record: \(prHits.spokenList), \(unit.spoken(weightKg)), \(reps) reps."
+            message += " New personal record: \(prHits.spokenList), \(unit.spoken(weightKg)), \(plural(reps, "rep"))."
         }
         announce(message)
         prefill()
@@ -291,12 +312,23 @@ final class LiveSession {
         save()
     }
 
-    /// Ends this device's sessions left open by a crash, at their last logged set, so history and "last time" see them.
-    static func closeAbandoned(in context: ModelContext) {
+    /// At launch: re-attaches a Health workout left running by a crash to this device's most recent open
+    /// session, so logging continues. Every other open session is closed (`closeAbandoned`).
+    static func recover(in context: ModelContext, snapshots: [UUID: ExerciseSnapshot] = [:]) async -> LiveSession? {
         let source = Self.source.rawValue
-        guard let open = try? context.fetch(FetchDescriptor<WorkoutSession>(predicate: #Predicate {
+        let open = (try? context.fetch(FetchDescriptor<WorkoutSession>(predicate: #Predicate {
             $0.endedAt == nil && $0.deletedAt == nil && $0.sourceRaw == source
-        })) else { return }
+        }, sortBy: [SortDescriptor(\.startedAt, order: .reverse)]))) ?? []
+        guard let latest = open.first else { return nil }
+        let live = LiveSession(resuming: latest, context: context, snapshots: snapshots)
+        var recovered = false
+        do { recovered = try await live.manager.recover() } catch { print("Workout recovery failed: \(error)") }
+        closeAbandoned(recovered ? Array(open.dropFirst()) : open, in: context)
+        return recovered ? live : nil
+    }
+
+    /// Ends sessions left open by a crash at their last logged set, so history and "last time" see them.
+    private static func closeAbandoned(_ open: [WorkoutSession], in context: ModelContext) {
         for session in open {
             let sid = session.id
             let entries = (try? context.fetch(FetchDescriptor<SessionExercise>(predicate: #Predicate { $0.sessionID == sid }))) ?? []

@@ -85,7 +85,7 @@ struct PhoneSessionView: View {
             .accessibilityLabel([
                 "Elapsed \(spokenDuration(elapsed))",
                 hr.map { "heart rate \($0)" } ?? "heart rate unavailable",
-                "\(kcal) calories",
+                plural(kcal, "calorie"),
                 live.manager.isPaused ? "paused" : nil,
             ].compactMap { $0 }.joined(separator: ", "))
         }
@@ -126,7 +126,7 @@ struct PhoneSessionView: View {
                 Menu {
                     ForEach(Array(live.items.enumerated()), id: \.offset) { i, other in
                         Button("\(other.exercise.name) (\(other.sets.count))") { live.go(to: i) }
-                            .accessibilityLabel("Exercise \(i + 1) of \(live.items.count): \(other.exercise.name), \(other.sets.count) sets logged")
+                            .accessibilityLabel("Exercise \(i + 1) of \(live.items.count): \(other.exercise.name), \(plural(other.sets.count, "set")) logged")
                     }
                 } label: {
                     Text(item.exercise.name).font(.title2.bold()).multilineTextAlignment(.center).foregroundStyle(.primary)
@@ -151,7 +151,7 @@ struct PhoneSessionView: View {
                        label: "Weight", spokenValue: weightUnit.spoken(live.weightKg)) {
                 live.stepWeight($0, unit: weightUnit)
             }
-            BigStepper(value: "\(live.reps)", unit: "reps", label: "Reps", spokenValue: "\(live.reps) reps") {
+            BigStepper(value: "\(live.reps)", unit: "reps", label: "Reps", spokenValue: plural(live.reps, "rep")) {
                 live.stepReps($0)
             }
         }
@@ -206,7 +206,7 @@ struct PhoneSessionView: View {
                 Text("Log Set \(n)").font(.title3.bold()).frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Log set \(n): \(weightUnit.spoken(live.weightKg)), \(live.reps) reps")
+            .accessibilityLabel("Log set \(n): \(weightUnit.spoken(live.weightKg)), \(plural(live.reps, "rep"))")
         }
     }
 }

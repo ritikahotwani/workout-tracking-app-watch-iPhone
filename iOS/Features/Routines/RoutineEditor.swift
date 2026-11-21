@@ -71,7 +71,7 @@ struct RoutineEditor: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(exercise?.name ?? "Unknown exercise")
-        .accessibilityValue("\(item.targetSets) sets of \(item.targetReps) reps, rest \(rest) seconds")
+        .accessibilityValue("\(plural(item.targetSets, "set")) of \(plural(item.targetReps, "rep")), rest \(rest) seconds")
     }
 
     private func add(_ exercise: Exercise) {

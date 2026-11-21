@@ -73,13 +73,13 @@ struct ExerciseStatsView: View {
                 let weight = kg > 0 ? unit(kg) : "Bodyweight"
                 HStack {
                     Text(weight).frame(maxWidth: .infinity, alignment: .leading)
-                    Text("\(reps) reps").frame(maxWidth: .infinity, alignment: .leading)
+                    Text(plural(reps, "rep")).frame(maxWidth: .infinity, alignment: .leading)
                     Text(date?.formatted(date: .abbreviated, time: .omitted) ?? "")
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .monospacedDigit()
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(kg > 0 ? weightUnit.spoken(kg) : "Bodyweight"): \(reps) reps"
+                .accessibilityLabel("\(kg > 0 ? weightUnit.spoken(kg) : "Bodyweight"): \(plural(reps, "rep"))"
                     + (date.map { ", \($0.formatted(date: .long, time: .omitted))" } ?? ""))
             }
         }

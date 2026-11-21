@@ -13,7 +13,6 @@ struct WorkoutTrackerApp: App {
         do { container = try makeModelContainer(inMemory: DemoData.isEnabled) } catch { fatalError("ModelContainer: \(error)") }
         do { try ExerciseLibrary.seedIfNeeded(container.mainContext) } catch { print("Exercise seeding failed: \(error)") }
         if DemoData.isEnabled { do { try DemoData.seed(container.mainContext) } catch { print("Demo seed failed: \(error)") } }
-        LiveSession.closeAbandoned(in: container.mainContext)
         backup = BackupController(container: container)
         watchSync = PhoneSync(container: container)
         watchSync.onMerge = { [backup] in backup.syncSoon() }

@@ -70,10 +70,6 @@ struct ExerciseListView: View {
     }
 }
 
-extension MuscleGroup {
-    var title: String { self == .fullBody ? "Full Body" : rawValue.capitalized }
-}
-
 extension CardioActivity {
     var title: String { self == .stairs ? "Stair Climbing" : rawValue.capitalized }
 }

@@ -60,6 +60,11 @@ struct SettingsView: View {
                 AppleSignInButton(backup: backup)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
+                    .alert("This iPhone has data from another account. Replace it with this account's data?",
+                           isPresented: .constant(backup.pendingAccountSwitch != nil)) {
+                        Button("Replace", role: .destructive) { Task { await backup.replaceLocalData() } }
+                        Button("Cancel", role: .cancel) { Task { await backup.cancelAccountSwitch() } }
+                    }
             }
         }
     }

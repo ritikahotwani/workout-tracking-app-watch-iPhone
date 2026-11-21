@@ -34,14 +34,15 @@ Each row → `WorkoutSession` (source `.import`, `startedAt`, `endedAt`, `active
 
 ## Exercise matching
 1. Normalise: `Exercise.nameKey` (lowercase, trimmed, collapsed spaces).
-2. Apply alias map (user approved merging obvious typos; keys/values are nameKeys; target is the display name used if created):
+2. Apply alias map (user approved merging obvious typos and pointing some names at built-ins; keys/values are nameKeys; target is the display name used if created):
    - dumbell shrugs → Dumbbell Shrugs
-   - squats → Squat
+   - squats, squat → Back Squat (built-in)
    - dead lift → Deadlift
-   - tricep push down → Tricep Pushdown
+   - tricep push down, tricep pushdown → Triceps Pushdown (built-in)
+   - chest press → Chest Press Machine (built-in)
    - leg extentions → Leg Extension
    - barbell shrugs → Barbell Shrug
-   - seated inclined db curls → Seated Incline DB Curl
+   - seated incline db curl, seated inclined db curls → Incline Dumbbell Curl (built-in)
    - hammer curls, dumbbell hammer curl → Hammer Curl
    - dumbell side laterals, db side lateral raises → DB Side Lateral Raise
    - (keep `Side Lateral Raises` separate — possibly cable/machine)
