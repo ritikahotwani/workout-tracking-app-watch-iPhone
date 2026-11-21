@@ -8,6 +8,9 @@ struct WorkoutTrackerWatchApp: App {
 
     init() {
         do { container = try makeModelContainer() } catch { fatalError("ModelContainer: \(error)") }
+        let context = container.mainContext
+        do { try ExerciseLibrary.seedIfNeeded(context) } catch { print("Seeding exercises failed: \(error)") }
+        LiveSession.closeAbandoned(in: context)
     }
 
     var body: some Scene {
@@ -16,20 +19,4 @@ struct WorkoutTrackerWatchApp: App {
         }
         .modelContainer(container)
     }
-}
-
-struct StartView: View {
-    var body: some View {
-        NavigationStack {
-            List {
-                Button("Empty Workout", systemImage: "plus") {}
-                Button("Log Weight", systemImage: "scalemass") {}
-            }
-            .navigationTitle("Workout")
-        }
-    }
-}
-
-#Preview {
-    StartView()
 }
