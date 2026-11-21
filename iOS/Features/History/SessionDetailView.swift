@@ -38,7 +38,6 @@ struct SessionDetailView: View {
             }
             ForEach(blocks) { block in
                 Section {
-                    Text(block.name).font(.headline).accessibilityAddTraits(.isHeader)
                     ForEach(Array(block.sets.enumerated()), id: \.element.id) { i, set in
                         SetRow(number: i + 1, set: set, weightUnit: weightUnit, distanceUnit: distanceUnit,
                                prs: prs[set.id] ?? [])
@@ -53,6 +52,8 @@ struct SessionDetailView: View {
                         Label(note, systemImage: "note.text").foregroundStyle(.secondary)
                             .accessibilityLabel("Note: \(note)")
                     }
+                } header: {
+                    Text(block.name).font(.headline).foregroundStyle(.primary).textCase(nil)
                 }
             }
             compareSection(blocks, records: records)

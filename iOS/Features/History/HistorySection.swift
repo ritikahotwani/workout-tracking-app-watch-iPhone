@@ -100,15 +100,21 @@ struct SetRow: View {
     let weightUnit: WeightUnit
     let distanceUnit: DistanceUnit
     var prs: Set<PRType> = []
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text("\(number)").foregroundStyle(.secondary).frame(minWidth: 20, alignment: .leading)
-            Text(text.short)
-            if !prs.isEmpty {
-                Image(systemName: "trophy.fill").foregroundStyle(.tint).accessibilityHidden(true)
+        // At accessibility sizes the rest time moves under the set instead of squeezing it into a narrow column.
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                                                  : AnyLayout(HStackLayout(spacing: 12))
+        layout {
+            HStack(spacing: 12) {
+                Text("\(number)").foregroundStyle(.secondary).frame(minWidth: 20, alignment: .leading)
+                Text(text.short)
+                if !prs.isEmpty {
+                    Image(systemName: "trophy.fill").foregroundStyle(.tint).accessibilityHidden(true)
+                }
             }
-            Spacer()
+            if !typeSize.isAccessibilitySize { Spacer() }
             if let rest = set.restSeconds {
                 Text("rest " + clock(rest)).font(.subheadline).foregroundStyle(.secondary)
             }
