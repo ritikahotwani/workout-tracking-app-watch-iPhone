@@ -95,8 +95,10 @@ import Testing
         #expect(try roundTrip(RoutineDTO(Routine(name: "Legs", createdAt: t, updatedAt: t))).0.name == "Legs")
         let re = RoutineExerciseDTO(RoutineExercise(routineID: UUID(), exerciseID: UUID(), createdAt: t, updatedAt: t))
         #expect(try roundTrip(re).0 == re && roundTrip(re).1["routine_id"] != nil)
-        let ws = WorkoutSessionDTO(WorkoutSession(startedAt: t, source: .watch, createdAt: t, updatedAt: t))
-        #expect(try roundTrip(ws).0 == ws && roundTrip(ws).1["started_at"] != nil)
+        let ws = WorkoutSessionDTO(WorkoutSession(startedAt: t, source: .watch, note: "tired", createdAt: t, updatedAt: t))
+        #expect(try roundTrip(ws).0 == ws && roundTrip(ws).1["started_at"] != nil && roundTrip(ws).1["note"] as? String == "tired")
+        let bare = WorkoutSessionDTO(WorkoutSession(startedAt: t, source: .phone, createdAt: t, updatedAt: t))
+        #expect(try roundTrip(bare).1["note"] is NSNull)  // explicit null so clearing a note reaches the server
         let se = SessionExerciseDTO(SessionExercise(sessionID: UUID(), exerciseID: UUID(), note: "slow", createdAt: t, updatedAt: t))
         #expect(try roundTrip(se).0 == se && roundTrip(se).1["session_id"] != nil)
         let bw = BodyWeightEntryDTO(BodyWeightEntry(date: t, weightKg: 75, source: .health, createdAt: t, updatedAt: t))

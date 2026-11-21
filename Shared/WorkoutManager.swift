@@ -12,10 +12,15 @@ final class WorkoutManager: NSObject {
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var startDate: Date?
+    /// Outdoor activity's Health distance type and the workout total when it began.
+    private var cardioDistanceType: HKQuantityType?
+    private var cardioDistanceStart = 0.0
 
     private(set) var isPaused = false
     private(set) var heartRate: Double?
     private(set) var activeCalories: Double?
+    /// Meters Health measured during the running outdoor activity; nil until it reports any.
+    private(set) var cardioDistance: Double?
 
     struct Summary {
         var workoutID: UUID?
@@ -26,10 +31,11 @@ final class WorkoutManager: NSObject {
 
     func requestAuthorization() async throws {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        let share: Set<HKSampleType> = [.workoutType()]
-        let read: Set<HKObjectType> = [
+        let distances: Set<HKSampleType> = Set(CardioActivity.allCases.compactMap(\.distanceType).map { HKQuantityType($0) })
+        let share: Set<HKSampleType> = distances.union([.workoutType(), HKSeriesType.workoutRoute()])
+        let read: Set<HKObjectType> = Set(distances).union([
             .workoutType(), HKQuantityType(.heartRate), HKQuantityType(.activeEnergyBurned),
-        ]
+        ])
         try await store.requestAuthorization(toShare: share, read: read)
     }
 
@@ -74,15 +80,49 @@ final class WorkoutManager: NSObject {
         return startDate.map { date.timeIntervalSince($0) } ?? 0
     }
 
-    func beginCardio(_ activity: CardioActivity, at date: Date) {
+    /// Starts a cardio activity inside the session. Outdoors Health measures distance live;
+    /// indoors its estimate is switched off so the manual distance (`addDistance`) is the only one.
+    func beginCardio(_ activity: CardioActivity, outdoor: Bool, at date: Date) {
         let config = HKWorkoutConfiguration()
         config.activityType = activity.hkType
-        config.locationType = .indoor  // ponytail: outdoor + GPS route arrive in Phase 8
+        config.locationType = outdoor ? .outdoor : .indoor
         session?.beginNewActivity(configuration: config, date: date, metadata: nil)
+        cardioDistance = nil
+        cardioDistanceType = nil
+        guard let id = activity.distanceType, let source = builder?.dataSource else { return }
+        let type = HKQuantityType(id)
+        if outdoor {
+            source.enableCollection(for: type, predicate: nil)
+            cardioDistanceType = type
+            cardioDistanceStart = distanceTotal(type) ?? 0
+        } else {
+            source.disableCollection(for: type)
+        }
     }
 
     func endCardio(at date: Date) {
         session?.endCurrentActivity(on: date)
+        cardioDistanceType = nil
+        cardioDistance = nil
+    }
+
+    /// Manual (indoor) distance as a Health sample over the activity's time range.
+    func addDistance(_ meters: Double, activity: CardioActivity, from start: Date, to end: Date) {
+        guard let builder, meters > 0, let id = activity.distanceType, end > start else { return }
+        let sample = HKQuantitySample(type: HKQuantityType(id), quantity: HKQuantity(unit: .meter(), doubleValue: meters),
+                                      start: start, end: end)
+        builder.add([sample]) { _, error in
+            if let error { print("WorkoutManager.addDistance: \(error)") }
+        }
+    }
+
+    /// The workout's GPS route; Health attaches it to the workout when the builder finishes.
+    var routeBuilder: HKWorkoutRouteBuilder? {
+        builder?.seriesBuilder(for: .workoutRoute()) as? HKWorkoutRouteBuilder
+    }
+
+    private func distanceTotal(_ type: HKQuantityType) -> Double? {
+        builder?.statistics(for: type)?.sumQuantity()?.doubleValue(for: .meter())
     }
 
     /// Ends and saves the workout to Health.
@@ -135,20 +175,9 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
         Task { @MainActor in
             if let hr { self.heartRate = hr }
             if let kcal { self.activeCalories = kcal }
-        }
-    }
-}
-
-extension CardioActivity {
-    var hkType: HKWorkoutActivityType {
-        switch self {
-        case .running: .running
-        case .walking: .walking
-        case .cycling: .cycling
-        case .rowing: .rowing
-        case .elliptical: .elliptical
-        case .stairs: .stairClimbing
-        case .other: .mixedCardio
+            if let type = self.cardioDistanceType, let total = self.distanceTotal(type) {
+                self.cardioDistance = max(0, total - self.cardioDistanceStart)
+            }
         }
     }
 }

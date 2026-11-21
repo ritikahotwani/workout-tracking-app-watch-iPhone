@@ -87,11 +87,12 @@ public final class WorkoutSession: Syncable {
     public var avgHeartRate: Double?
     public var healthKitWorkoutID: UUID?
     public var importKey: String?
+    public var note: String?
 
     public init(
         id: UUID = UUID(), routineID: UUID? = nil, startedAt: Date = .now, endedAt: Date? = nil,
         pausedSeconds: Double = 0, source: SessionSource, activeCalories: Double? = nil,
-        avgHeartRate: Double? = nil, healthKitWorkoutID: UUID? = nil, importKey: String? = nil,
+        avgHeartRate: Double? = nil, healthKitWorkoutID: UUID? = nil, importKey: String? = nil, note: String? = nil,
         userID: UUID? = nil, createdAt: Date = .now, updatedAt: Date = .now, deletedAt: Date? = nil,
         needsPush: Bool = true
     ) {
@@ -105,6 +106,7 @@ public final class WorkoutSession: Syncable {
         self.avgHeartRate = avgHeartRate
         self.healthKitWorkoutID = healthKitWorkoutID
         self.importKey = importKey
+        self.note = note
         self.userID = userID
         self.createdAt = createdAt
         self.updatedAt = updatedAt

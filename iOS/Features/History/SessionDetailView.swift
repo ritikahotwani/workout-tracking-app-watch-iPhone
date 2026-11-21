@@ -10,6 +10,8 @@ struct SessionDetailView: View {
     @Query private var exercises: [Exercise]
     @AppStorage("weightUnit") private var weightUnit: WeightUnit = .kg
     @AppStorage("distanceUnit") private var distanceUnit: DistanceUnit = .km
+    @State private var noteDraft = ""
+    @FocusState private var noteFocused: Bool
 
     private struct Block: Identifiable {
         let entry: SessionExercise
@@ -26,6 +28,12 @@ struct SessionDetailView: View {
         let prs = prMarkers(blocks, history: records)
         List {
             summary(sets: blocks.reduce(0) { $0 + $1.sets.count }, volume: Volume.total(mine))
+            Section("Note") {
+                TextField("Add a note", text: $noteDraft, axis: .vertical)
+                    .focused($noteFocused)
+                    .accessibilityLabel("Session note")
+                    .onChange(of: noteFocused) { if !noteFocused { saveNote() } }
+            }
             ForEach(blocks) { block in
                 Section {
                     Text(block.name).font(.headline).accessibilityAddTraits(.isHeader)
@@ -48,6 +56,17 @@ struct SessionDetailView: View {
             compareSection(blocks, records: records)
         }
         .navigationTitle(sessionTitle(session, routines: routines))
+        .onAppear { noteDraft = session.note ?? "" }
+        .onDisappear(perform: saveNote)
+    }
+
+    private func saveNote() {
+        let trimmed = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = trimmed.isEmpty ? nil : trimmed
+        guard note != session.note else { return }
+        session.note = note
+        session.touch()
+        do { try context.save() } catch { print("Saving session note failed: \(error)") }
     }
 
     private func summary(sets: Int, volume: Double) -> some View {

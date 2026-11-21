@@ -37,6 +37,11 @@ final class LiveSession {
     var weightKg = 0.0
     var reps = 10
     var distanceMeters = 0.0
+    /// Outdoor cardio uses GPS (watch only). Defaults from the exercise name; the user picks when that's ambiguous.
+    var outdoor = false
+    #if os(watchOS)
+    let route = LocationRoute()
+    #endif
 
     /// PRs hit by the last logged set of the current exercise.
     private(set) var prHits: Set<PRType> = []
@@ -48,8 +53,8 @@ final class LiveSession {
     private var restSet: SetEntry?
     private var restTask: Task<Void, Never>?
 
-    /// Running cardio activity: which item, and workout elapsed time when it began.
-    private var cardio: (index: Int, startElapsed: TimeInterval)?
+    /// Running cardio activity: which item, workout elapsed time and date when it began.
+    private var cardio: (index: Int, startElapsed: TimeInterval, start: Date)?
 
     var current: Item? { items.indices.contains(index) ? items[index] : nil }
     var isCardioRunning: Bool { cardio != nil }
@@ -122,6 +127,9 @@ final class LiveSession {
         weightKg = source?.weightKg ?? 0
         reps = source?.reps ?? item.target?.targetReps ?? 10
         distanceMeters = 0
+        #if os(watchOS)
+        outdoor = CardioActivity.isOutdoor(name: item.exercise.name, activity: item.exercise.cardioActivity) ?? false
+        #endif
     }
 
     // MARK: Strength
@@ -207,15 +215,26 @@ final class LiveSession {
         restEnd = nil
     }
 
-    // MARK: Cardio (manual distance; GPS is Phase 8)
+    // MARK: Cardio (GPS outdoors on the watch, manual distance otherwise)
 
     func startCardio() {
         guard let item = current, item.isCardio, cardio == nil else { return }
         let now = Date.now
         endRest(at: now)
-        manager.beginCardio(item.exercise.cardioActivity ?? .other, at: now)
-        cardio = (index, manager.elapsed(at: now))
-        announce("\(item.exercise.name) started")
+        manager.beginCardio(item.exercise.cardioActivity ?? .other, outdoor: outdoor, at: now)
+        #if os(watchOS)
+        if outdoor { route.start(routeBuilder: manager.routeBuilder) }
+        #endif
+        cardio = (index, manager.elapsed(at: now), now)
+        announce("\(item.exercise.name) started\(outdoor ? ", outdoor" : "")")
+    }
+
+    /// Meters so far: outdoors Health's distance (GPS sum as fallback), otherwise the manual value.
+    var cardioDistance: Double {
+        #if os(watchOS)
+        if outdoor, cardio != nil { return manager.cardioDistance ?? route.distanceMeters }
+        #endif
+        return distanceMeters
     }
 
     func cardioDuration(at date: Date) -> TimeInterval {
@@ -226,17 +245,24 @@ final class LiveSession {
         guard let running = cardio else { return }
         let now = Date.now
         let duration = cardioDuration(at: now)
+        let distance = cardioDistance
         let item = items[running.index]
+        #if os(watchOS)
+        if outdoor { route.stop() }
+        #endif
         manager.endCardio(at: now)
+        if !outdoor {
+            manager.addDistance(distance, activity: item.exercise.cardioActivity ?? .other, from: running.start, to: now)
+        }
         cardio = nil
         let set = SetEntry(sessionExerciseID: item.entry.id, sortOrder: item.sets.count,
-                           distanceMeters: distanceMeters > 0 ? distanceMeters : nil,
+                           distanceMeters: distance > 0 ? distance : nil,
                            durationSeconds: duration, completedAt: now)
         context.insert(set)
         items[running.index].sets.append(set)
         save()
         let unit = DistanceUnit(rawValue: UserDefaults.standard.string(forKey: "distanceUnit") ?? "") ?? .km
-        announce("\(item.exercise.name) logged: \(spokenDuration(duration)), \(unit.spoken(distanceMeters)).")
+        announce("\(item.exercise.name) logged: \(spokenDuration(duration)), \(unit.spoken(distance)).")
         distanceMeters = 0
     }
 
@@ -244,6 +270,9 @@ final class LiveSession {
 
     func togglePause() {
         if manager.isPaused { manager.resume() } else { manager.pause() }
+        #if os(watchOS)
+        if outdoor, cardio != nil { manager.isPaused ? route.pause() : route.resume() }
+        #endif
         announce(manager.isPaused ? "Workout paused" : "Workout resumed")
     }
 

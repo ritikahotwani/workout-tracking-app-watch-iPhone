@@ -1,7 +1,7 @@
 import SwiftUI
 import WorkoutCore
 
-/// Settings tab (PLAN §6): units, account, backup, and CSV (Phase 7).
+/// Settings tab (PLAN §6): units, account, backup, and CSV import/export.
 struct SettingsView: View {
     @Environment(BackupController.self) private var backup
     @AppStorage("weightUnit") private var weightUnit: WeightUnit = .kg
@@ -33,17 +33,12 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Group {
-                        Button("Import SetGraph CSV", systemImage: "square.and.arrow.down") {}
-                        Button("Export CSV", systemImage: "square.and.arrow.up") {}
-                    }
-                    .disabled(true)
-                    .foregroundStyle(.secondary)
-                    .tint(.secondary)
+                    SetGraphImportButton()
+                    CSVExportButton()
                 } header: {
                     Text("Data")
                 } footer: {
-                    Text("Coming soon.")
+                    Text("Import shows a preview first and never adds the same workout twice. Export uses kg and meters.")
                 }
             }
             .navigationTitle("Settings")

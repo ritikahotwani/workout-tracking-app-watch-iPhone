@@ -90,55 +90,111 @@ struct ExercisePage: View {
 
     private var cardio: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
+            let running = live.isCardioRunning
             let duration = live.cardioDuration(at: context.date)
-            let pace = distanceUnit.pace(distanceMeters: live.distanceMeters, durationSeconds: duration)
-            let speed = distanceUnit.speed(distanceMeters: live.distanceMeters, durationSeconds: duration)
+            let distance = live.cardioDistance
+            let average = distanceUnit.pace(distanceMeters: distance, durationSeconds: duration)
+            // Current pace/speed: GPS over the last ~30 s outdoors, else the average.
+            let window = live.outdoor && running ? live.route.recentWindow : nil
+            let pace = window.flatMap { distanceUnit.pace(distanceMeters: $0.meters, durationSeconds: $0.seconds) }
+            let speed = window.map { distanceUnit.speed(distanceMeters: $0.meters, durationSeconds: $0.seconds) }
+                ?? distanceUnit.speed(distanceMeters: distance, durationSeconds: duration)
             VStack(spacing: 4) {
-                HStack(spacing: 6) {
-                    ValueBox(value: clock(duration), unit: "time", isFocused: false)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Duration")
-                        .accessibilityValue(spokenDuration(duration))
-                    ValueBox(value: distanceUnit.short(live.distanceMeters), unit: distanceUnit.rawValue,
-                             isFocused: focus == .distance)
-                        .focusable()
-                        .focused($focus, equals: .distance)
-                        .digitalCrownRotation(
-                            Binding(get: { distanceUnit.fromMeters(live.distanceMeters) },
-                                    set: { live.distanceMeters = distanceUnit.toMeters(max(0, $0)) }),
-                            from: 0, through: 200, by: distanceUnit.step,
-                            sensitivity: .medium, isContinuous: false, isHapticFeedbackEnabled: true)
-                        .onTapGesture { focus = .distance }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Distance")
-                        .accessibilityValue(distanceUnit.spoken(live.distanceMeters))
-                        .accessibilityAdjustableAction {
-                            let v = distanceUnit.fromMeters(live.distanceMeters) + ($0 == .increment ? 1 : -1) * distanceUnit.step
-                            live.distanceMeters = distanceUnit.toMeters(max(0, v))
-                        }
-                }
-                .defaultFocus($focus, .distance)
+                metrics(duration: duration, distance: distance, pace: pace, average: average, speed: speed, running: running)
 
-                HStack {
-                    Text(pace.map { clock($0) + " /" + distanceUnit.rawValue } ?? "--")
-                        .accessibilityLabel("Pace")
-                        .accessibilityValue(pace.map { "\(spokenDuration($0)) per \(distanceUnit == .km ? "kilometer" : "mile")" } ?? "none")
-                    Spacer()
-                    Text(speed.map { $0.formatted(.number.precision(.fractionLength(1))) + (distanceUnit == .km ? " km/h" : " mph") } ?? "--")
-                        .accessibilityLabel("Speed")
-                        .accessibilityValue(speed.map(distanceUnit.spokenSpeed) ?? "none")
+                if !running, let item = live.current,
+                   CardioActivity.isOutdoor(name: item.exercise.name, activity: item.exercise.cardioActivity) == nil {
+                    Toggle("Outdoor", isOn: $live.outdoor)
+                        .font(.footnote)
+                        .accessibilityLabel("Outdoor, uses GPS for distance and route")
                 }
-                .font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
 
-                Button { live.isCardioRunning ? live.logCardio() : live.startCardio() } label: {
-                    Text(live.isCardioRunning ? "Log" : "Start").font(.title3.bold()).frame(maxWidth: .infinity, minHeight: 44)
+                Button { running ? live.logCardio() : live.startCardio() } label: {
+                    Text(running ? "End" : "Start").font(.title2.bold()).frame(maxWidth: .infinity, minHeight: 52)
                 }
                 .buttonStyle(.borderedProminent)
-                .accessibilityLabel(live.isCardioRunning
-                    ? "Log \(spokenDuration(duration)), \(distanceUnit.spoken(live.distanceMeters))"
-                    : "Start \(live.current?.exercise.name ?? "cardio")")
+                .tint(running ? .red : nil)
+                .accessibilityLabel(running
+                    ? "End and log \(spokenDuration(duration)), \(distanceUnit.spoken(distance))"
+                    : "Start \(live.current?.exercise.name ?? "cardio"), \(live.outdoor ? "outdoor" : "indoor")")
             }
         }
+        .onChange(of: splits) { _, n in
+            guard n > 0 else { return }
+            let average = distanceUnit.pace(distanceMeters: live.cardioDistance, durationSeconds: live.cardioDuration(at: .now))
+            AccessibilityNotification.Announcement(
+                "\(distanceUnit.spoken(distanceUnit.toMeters(Double(n))))" + (average.map { ". Average pace \(spokenPace($0))" } ?? "")
+            ).post()
+        }
+    }
+
+    /// Whole km/mi covered outdoors, for split announcements.
+    private var splits: Int {
+        live.outdoor && live.isCardioRunning ? Int(distanceUnit.fromMeters(live.cardioDistance)) : 0
+    }
+
+    /// One VoiceOver element; indoors it is adjustable (distance), like the Crown.
+    @ViewBuilder
+    private func metrics(duration: TimeInterval, distance: Double, pace: Double?, average: Double?, speed: Double?,
+                         running: Bool) -> some View {
+        let manual = !(live.outdoor && running)
+        let grid = VStack(spacing: 2) {
+            HStack(spacing: 6) {
+                ValueBox(value: clock(duration), unit: "time", isFocused: false)
+                ValueBox(value: distanceUnit.short(distance), unit: distanceUnit.rawValue, isFocused: manual && focus == .distance)
+                    .focusable(manual)
+                    .focused($focus, equals: .distance)
+                    .digitalCrownRotation(
+                        Binding(get: { distanceUnit.fromMeters(live.distanceMeters) },
+                                set: { live.distanceMeters = distanceUnit.toMeters(max(0, $0)) }),
+                        from: 0, through: 200, by: distanceUnit.step,
+                        sensitivity: .medium, isContinuous: false, isHapticFeedbackEnabled: true)
+                    .onTapGesture { if manual { focus = .distance } }
+            }
+            .defaultFocus($focus, .distance)
+            if running {  // before Start this row would be all "--"; the Indoor/Outdoor toggle sits there instead
+                HStack(spacing: 4) {
+                    if live.outdoor { Metric(value: pace.map(clock), unit: "pace") }
+                    Metric(value: average.map(clock), unit: "avg /\(distanceUnit.rawValue)")
+                    Metric(value: speed.map { $0.formatted(.number.precision(.fractionLength(1))) },
+                           unit: distanceUnit == .km ? "km/h" : "mph")
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([
+            "Time \(spokenDuration(duration))",
+            live.outdoor ? pace.map { "pace \(spokenPace($0))" } ?? "pace unavailable" : nil,
+            average.map { "average pace \(spokenPace($0))" },
+            speed.map { "speed \(distanceUnit.spokenSpeed($0))" },
+        ].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue("Distance \(distanceUnit.spoken(distance))")
+        if manual {
+            grid.accessibilityAdjustableAction {
+                let v = distanceUnit.fromMeters(live.distanceMeters) + ($0 == .increment ? 1 : -1) * distanceUnit.step
+                live.distanceMeters = distanceUnit.toMeters(max(0, v))
+            }
+        } else {
+            grid
+        }
+    }
+
+    private func spokenPace(_ seconds: Double) -> String {
+        "\(spokenDuration(seconds)) per \(distanceUnit == .km ? "kilometer" : "mile")"
+    }
+}
+
+private struct Metric: View {
+    let value: String?
+    let unit: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(value ?? "--").font(.system(.title3, design: .rounded, weight: .semibold)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(unit).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

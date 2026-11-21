@@ -206,9 +206,10 @@ public struct WorkoutSessionDTO: SyncDTO {
     @NullEncodable public var avgHeartRate: Double?
     @NullEncodable public var healthKitWorkoutID: UUID?
     @NullEncodable public var importKey: String?
+    @NullEncodable public var note: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, source
+        case id, source, note
         case userID = "user_id", createdAt = "created_at", updatedAt = "updated_at", deletedAt = "deleted_at"
         case routineID = "routine_id", startedAt = "started_at", endedAt = "ended_at"
         case pausedSeconds = "paused_seconds", activeCalories = "active_calories", avgHeartRate = "avg_heart_rate"
@@ -221,14 +222,14 @@ extension WorkoutSessionDTO {
         self.init(id: m.id, userID: m.userID, createdAt: m.createdAt, updatedAt: m.updatedAt, deletedAt: m.deletedAt,
                   routineID: m.routineID, startedAt: m.startedAt, endedAt: m.endedAt, pausedSeconds: m.pausedSeconds,
                   source: m.sourceRaw, activeCalories: m.activeCalories, avgHeartRate: m.avgHeartRate,
-                  healthKitWorkoutID: m.healthKitWorkoutID, importKey: m.importKey)
+                  healthKitWorkoutID: m.healthKitWorkoutID, importKey: m.importKey, note: m.note)
     }
 
     public func apply(to m: WorkoutSession) {
         m.userID = userID; m.createdAt = createdAt; m.updatedAt = updatedAt; m.deletedAt = deletedAt
         m.routineID = routineID; m.startedAt = startedAt; m.endedAt = endedAt; m.pausedSeconds = pausedSeconds
         m.sourceRaw = source; m.activeCalories = activeCalories; m.avgHeartRate = avgHeartRate
-        m.healthKitWorkoutID = healthKitWorkoutID; m.importKey = importKey
+        m.healthKitWorkoutID = healthKitWorkoutID; m.importKey = importKey; m.note = note
     }
 
     public func makeModel() -> WorkoutSession {
