@@ -4,7 +4,7 @@ import Observation
 import WorkoutCore
 
 /// Thin wrapper around one HKWorkoutSession + HKLiveWorkoutBuilder (PLAN §4).
-/// Builds for watchOS and iOS 26; the iPhone reuses it later.
+/// Shared by the watch and iPhone apps (HKWorkoutSession runs on iOS 26).
 /// Every call is best effort: logging must keep working when Health is unavailable or denied.
 @Observable @MainActor
 final class WorkoutManager: NSObject {
@@ -35,7 +35,6 @@ final class WorkoutManager: NSObject {
 
     /// Starts a strength session. Cardio exercises become activities inside it (`beginCardio`).
     func start(at date: Date) async throws {
-        startDate = date
         let config = HKWorkoutConfiguration()
         config.activityType = .traditionalStrengthTraining
         config.locationType = .indoor
@@ -44,11 +43,20 @@ final class WorkoutManager: NSObject {
         builder.dataSource = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: config)
         session.delegate = self
         builder.delegate = self
+        session.startActivity(with: date)
+        do {
+            try await builder.beginCollection(at: date)
+        } catch {
+            session.end()
+            throw error
+        }
+        // Only keep a session that is collecting, so `elapsed` never reads a dead builder.
         self.session = session
         self.builder = builder
-        session.startActivity(with: date)
-        try await builder.beginCollection(at: date)
     }
+
+    /// Wall-clock origin for `elapsed` until (or unless) Health collection starts.
+    func setStart(_ date: Date) { startDate = date }
 
     func pause() {
         isPaused = true

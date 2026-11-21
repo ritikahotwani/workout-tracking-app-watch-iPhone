@@ -19,7 +19,7 @@ struct StartView: View {
                     }
                     Button("Empty Workout", systemImage: "plus") { begin(nil) }
                     NavigationLink {
-                        Text("Coming soon").foregroundStyle(.secondary)  // Phase 5
+                        LogWeightView()
                     } label: {
                         Label("Log Weight", systemImage: "scalemass")
                     }

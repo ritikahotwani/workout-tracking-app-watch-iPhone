@@ -17,7 +17,7 @@ struct ExercisePage: View {
                 Text(item.exercise.name)
                     .font(.headline).lineLimit(1).minimumScaleFactor(0.6)
                 if let end = live.restEnd {
-                    RestIndicator(end: end, total: live.restTotal, skip: live.skipRest)
+                    RestIndicator(end: end, total: live.restTotal, skip: live.skipRest).font(.footnote)
                 } else if let last = lastLine(item.last, weight: weightUnit, distance: distanceUnit) {
                     Text(last.short)
                         .font(.footnote).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)

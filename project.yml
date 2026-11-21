@@ -22,8 +22,9 @@ targets:
   WorkoutTracker:
     type: application
     platform: iOS
-    sources: [iOS]
-    scheme: {}
+    sources: [iOS, Shared]
+    scheme:
+      testTargets: [WorkoutTrackerUITests]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ritikahotwani.workouttracker
@@ -35,6 +36,7 @@ targets:
       properties:
         CFBundleDisplayName: Workout
         UILaunchScreen: {}
+        UIBackgroundModes: [workout-processing]
         NSHealthShareUsageDescription: Reads your workouts, heart rate and body weight to show your training history.
         NSHealthUpdateUsageDescription: Saves your workouts and body weight to Apple Health.
         SUPABASE_URL: $(SUPABASE_URL)
@@ -54,7 +56,7 @@ targets:
   WorkoutTrackerWatch:
     type: application
     platform: watchOS
-    sources: [Watch]
+    sources: [Watch, Shared]
     scheme: {}
     settings:
       base:
@@ -78,3 +80,14 @@ targets:
         com.apple.developer.healthkit.access: []
     dependencies:
       - package: WorkoutCore
+
+  WorkoutTrackerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [iOSUITests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.ritikahotwani.workouttracker.uitests
+    dependencies:
+      - target: WorkoutTracker

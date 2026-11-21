@@ -1,8 +1,12 @@
 import Foundation
 import SwiftData
 import SwiftUI
-import WatchKit
 import WorkoutCore
+#if os(watchOS)
+import WatchKit
+#else
+import UIKit
+#endif
 
 /// State and logic of one live workout. Every change is saved immediately so a crash loses nothing.
 @Observable @MainActor
@@ -50,7 +54,7 @@ final class LiveSession {
 
     init(routine: Routine?, context: ModelContext) {
         self.context = context
-        workout = WorkoutSession(routineID: routine?.id, source: .watch)
+        workout = WorkoutSession(routineID: routine?.id, source: Self.source)
         context.insert(workout)
         if let routine {
             for (item, exercise) in (try? Queries.routineExercises(routineID: routine.id, in: context)) ?? [] {
@@ -59,6 +63,7 @@ final class LiveSession {
         }
         save()
         prefill()
+        manager.setStart(workout.startedAt)
     }
 
     func start() async {
@@ -137,7 +142,7 @@ final class LiveSession {
 
         var message = "Set \(item.sets.count + 1) logged. Rest \(spokenDuration(TimeInterval(item.restSeconds)))."
         if !prHits.isEmpty {
-            WKInterfaceDevice.current().play(.success)
+            Self.haptic(success: true)
             let unit = WeightUnit(rawValue: UserDefaults.standard.string(forKey: "weightUnit") ?? "") ?? .kg
             message += " New personal record: \(prHits.spokenList), \(unit.spoken(weightKg)), \(reps) reps."
         }
@@ -170,7 +175,7 @@ final class LiveSession {
             }
             try? await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow)))
             guard !Task.isCancelled else { return }
-            WKInterfaceDevice.current().play(.notification)
+            Self.haptic(success: false)
             self?.announce("Rest over")
             self?.restEnd = nil  // actual rest keeps counting until the next set or skip
         }
@@ -251,11 +256,11 @@ final class LiveSession {
         save()
     }
 
-    /// Ends watch sessions left open by a crash, at their last logged set, so history and "last time" see them.
+    /// Ends this device's sessions left open by a crash, at their last logged set, so history and "last time" see them.
     static func closeAbandoned(in context: ModelContext) {
-        let watch = SessionSource.watch.rawValue
+        let source = Self.source.rawValue
         guard let open = try? context.fetch(FetchDescriptor<WorkoutSession>(predicate: #Predicate {
-            $0.endedAt == nil && $0.deletedAt == nil && $0.sourceRaw == watch
+            $0.endedAt == nil && $0.deletedAt == nil && $0.sourceRaw == source
         })) else { return }
         for session in open {
             let sid = session.id
@@ -267,6 +272,17 @@ final class LiveSession {
         }
         try? context.save()
     }
+
+    #if os(watchOS)
+    static let source = SessionSource.watch
+    /// PR hit (`success`) or rest over.
+    private static func haptic(success: Bool) { WKInterfaceDevice.current().play(success ? .success : .notification) }
+    #else
+    static let source = SessionSource.phone
+    private static func haptic(success: Bool) {
+        UINotificationFeedbackGenerator().notificationOccurred(success ? .success : .warning)
+    }
+    #endif
 
     private func save() {
         do { try context.save() } catch { print("Save failed: \(error)") }
